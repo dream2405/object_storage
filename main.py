@@ -26,7 +26,7 @@ def unauthed():
     )
 
 
-@app.post("/token")
+@app.post("/login", description="로그인 (토큰 발급)")
 async def create_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
     """username 과 password를 OAuth 폼에서 꺼내고
     JWT 액세스 토큰을 반환"""
@@ -38,25 +38,25 @@ async def create_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
     return {"access_token": access_token, "token_type": "bearer"}
 
 
-@app.get("/token")
-def get_access_token(token: str = Depends(oauth2_dep)) -> dict:
-    """현재 액세스 토큰을 반환"""
-    return {"token": token}
+# @app.get("/token")
+# def get_access_token(token: str = Depends(oauth2_dep)) -> dict:
+#     """현재 액세스 토큰을 반환"""
+#     return {"token": token}
 
 @app.get("/")
 def get_all() -> list[PublicUser]:
     return security.get_all()
 
 
-@app.get("/{name}")
-def get_one(name) -> PublicUser:
-    try:
-        return security.get_one(name)
-    except Exception as exc:
-        raise HTTPException(status_code=404, detail=str(exc))
+# @app.get("/{name}")
+# def get_one(name) -> PublicUser:
+#     try:
+#         return security.get_one(name)
+#     except Exception as exc:
+#         raise HTTPException(status_code=404, detail=str(exc))
 
 
-@app.post("/", status_code=201)
+@app.post("/register", status_code=201, description="회원가입")
 def create(user: SignInUser) -> PublicUser:
     """새로운 유저를 생성"""
     if not user.name or not user.password:
@@ -70,25 +70,25 @@ def create(user: SignInUser) -> PublicUser:
         raise HTTPException(status_code=409, detail=str(exc))
 
 
-@app.patch("/{name}")
-def modify(name: str, user: PublicUser) -> PublicUser:
-    """유저 정보를 수정"""
-    if not user.name:
-        raise HTTPException(status_code=400, detail="Username is required")
-    if not security.lookup_user(name, is_public=False):
-        raise HTTPException(status_code=404, detail="User not found")
-    try:
-        return security.modify(name, user)
-    except Exception as exc:
-        raise HTTPException(status_code=404, detail=str(exc))
+# @app.patch("/{name}")
+# def modify(name: str, user: PublicUser) -> PublicUser:
+#     """유저 정보를 수정"""
+#     if not user.name:
+#         raise HTTPException(status_code=400, detail="Username is required")
+#     if not security.lookup_user(name, is_public=False):
+#         raise HTTPException(status_code=404, detail="User not found")
+#     try:
+#         return security.modify(name, user)
+#     except Exception as exc:
+#         raise HTTPException(status_code=404, detail=str(exc))
 
 
-@app.delete("/{name}")
-def delete(name: str) -> None:
-    try:
-        return security.delete(name)
-    except Exception as exc:
-        raise HTTPException(status_code=404, detail=str(exc))
+# @app.delete("/{name}")
+# def delete(name: str) -> None:
+#     try:
+#         return security.delete(name)
+#     except Exception as exc:
+#         raise HTTPException(status_code=404, detail=str(exc))
     
 
 if __name__ == "__main__":
