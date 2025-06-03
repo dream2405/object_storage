@@ -3,6 +3,7 @@ from typing import Annotated
 from fastapi import Depends
 from sqlmodel import Field, Session, SQLModel, create_engine, Relationship, UniqueConstraint
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 import os
 import uuid
 
@@ -25,13 +26,13 @@ def get_session():
 SessionDep = Annotated[Session, Depends(get_session)]
 
 class User(SQLModel, table=True):
-    id: str = Field(default=None, primary_key=True)
+    id: str = Field(primary_key=True)
     hashed_pw: str = Field(default=None, nullable=False)
     objects: list["Object"] = Relationship(back_populates="user")
 
 class Object(SQLModel, table=True):
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), nullable=False)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(ZoneInfo("Asia/Seoul")), nullable=False)
     size: float = Field(nullable=False)
     permission: str = Field(nullable=False, sa_column_kwargs={"comment": "공개/비공개/비밀번호"})
     path: str = Field(nullable=False)

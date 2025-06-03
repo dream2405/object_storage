@@ -2,6 +2,8 @@ from model import PublicUser, PrivateUser, SignInUser
 from sqlmodel import create_engine, Session, select
 from sqlalchemy.exc import IntegrityError
 from database import engine, User
+from fastapi import Depends, HTTPException, status
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import jwt
 from jose.exceptions import JWTError
 from datetime import timedelta, datetime, timezone
@@ -13,6 +15,8 @@ load_dotenv()
 
 SECRET_KEY: str = os.getenv("SECRET_KEY", "")
 ALGORITHM : str = os.getenv("ALGORITHM", "")
+
+security = HTTPBearer()
 
 # is_public 인자에 따라 나가는 모델이 분기된다.
 def row_to_model(row: User, is_public: bool = True) -> PublicUser | PrivateUser:
@@ -54,6 +58,8 @@ def create(user: PrivateUser) -> PublicUser: # type: ignore
         try:
             session.add(user_instance)
             session.commit()
+            session.refresh(user_instance)  # Refresh to get the latest state
+            return row_to_model(user_instance, is_public=True)
         except IntegrityError:
             session.rollback()
             raise Exception(f"user {user.name} already exists")
@@ -147,3 +153,16 @@ def create_access_token(data: dict, expires: timedelta | None = None):
     src.update({"exp": now + expires})
     encoded_jwt = jwt.encode(src, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
+
+async def get_current_user_from_header(credentials: HTTPAuthorizationCredentials = Depends(security)) -> PublicUser:
+    token = credentials.credentials
+    user = get_current_user(token)
+    
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    return user

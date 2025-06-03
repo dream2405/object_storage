@@ -2,6 +2,7 @@
 .env
 .venv/
 __pycache__/
+uploads/
 *.pyc
 *.pyo
 *.pyd
