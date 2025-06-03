@@ -5,7 +5,7 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi.staticfiles import StaticFiles
 from database import SessionDep
 from dotenv import load_dotenv
-from model import PublicUser, SignInUser, PrivateUser
+from model import *
 from sqlmodel import select
 import security
 import os
@@ -65,18 +65,24 @@ def create(user: SignInUser) -> PublicUser:
 @app.post("/upload", description="파일 업로드 (JWT 필요)")
 async def upload_file(
     file: UploadFile, 
+    create_object: CreateObject,
     session: SessionDep, 
     current_user: PublicUser = Depends(security.get_current_user_from_header)):
-    """파일 업로드 엔드포인트, 권한 기본값은 비공개"""
+    """파일 업로드 엔드포인트"""
     if not file.filename:
         raise HTTPException(status_code=400, detail="Filename is required")
-    
+    if create_object.permission not in ["public", "private", "password"]:
+        raise HTTPException(status_code=400, detail="Invalid permission type")
+    if create_object.permission == "password" and not create_object.password:
+        raise HTTPException(status_code=400, detail="Password is required for password-protected files")
+
     file_uuid = uuid.uuid4()
     file_upload = database.Object(
         id=file_uuid,
         size=file.size, # type: ignore
-        permission="private",
+        permission=create_object.permission,
         path="uploads/" + file_uuid.hex + os.path.splitext(file.filename)[1],
+        hashed_pw=security.get_hash(create_object.password) if create_object.permission == "password" else None, # type: ignore
         user_id=current_user.name
     )
 
@@ -100,10 +106,12 @@ async def get_files(
     files = session.exec(select(database.Object).where(database.Object.user_id == current_user.name)).all()
     return files
 
+
 @app.get("/files/{file_id}", description="파일 메타데이터 조회")
 async def get_file(
     file_id: uuid.UUID,
     session: SessionDep,
+    object_pw: ObjectPassword,
     current_user: PublicUser = Depends(security.get_current_user_from_header)):
     """파일 ID로 파일 메타데이터 (파일명, 크기, 업로드 시간, 소유자, 접근 권한 등) 조회"""
     file = session.exec(select(database.Object).where(database.Object.id == file_id)).first()
@@ -111,17 +119,21 @@ async def get_file(
         raise HTTPException(status_code=404, detail="File not found")
     if file.user_id != current_user.name and file.permission != "public":
         raise HTTPException(status_code=403, detail="You do not have permission to access this file")
+    if file.permission == "password":
+        if not security.verify_password(object_pw.password, file.hashed_pw): # type: ignore
+            raise HTTPException(status_code=403, detail="Invalid password for this file")
+    
     return file
 
 
-@app.put("/files/{file_id}/permisson", description="파일 접근 권한 변경")
+@app.put("/files/{file_id}/permission", description="파일 접근 권한 변경")
 async def update_file_permission(
     file_id: uuid.UUID,
-    permission: str,
+    create_object: CreateObject,
     session: SessionDep,
     current_user: PublicUser = Depends(security.get_current_user_from_header)):
     """파일 접근 권한을 변경"""
-    if permission not in ["public", "private", "password"]:
+    if create_object.permission not in ["public", "private", "password"]:
         raise HTTPException(status_code=400, detail="Invalid permission type")
     
     file = session.exec(select(database.Object).where(database.Object.id == file_id)).first()
@@ -131,10 +143,13 @@ async def update_file_permission(
     if file.user_id != current_user.name:
         raise HTTPException(status_code=403, detail="You do not have permission to access this file")
     
-    file.permission = permission
+    file.permission = create_object.permission
+    file.hashed_pw = security.get_hash(create_object.password) if create_object.permission == "password" else None
+    
     session.add(file)
     session.commit()
     session.refresh(file)
+    
     return file
 
 
@@ -164,6 +179,7 @@ async def delete_file(
 @app.get("/download/{file_id}", description="파일 다운로드")
 async def download_file(
     file_id: uuid.UUID,
+    object_pw: ObjectPassword,
     session: SessionDep,
     current_user: PublicUser = Depends(security.get_current_user_from_header)):
     """파일 ID로 파일 다운로드"""
@@ -173,7 +189,10 @@ async def download_file(
     
     if file.user_id != current_user.name and file.permission != "public":
         raise HTTPException(status_code=403, detail="You do not have permission to access this file")
-    
+    if file.permission == "password":
+        if not security.verify_password(object_pw.password, file.hashed_pw): # type: ignore
+            raise HTTPException(status_code=403, detail="Invalid password for this file")
+
     return {"file_url": SERVER_URL + "/" + file.path}
 
 

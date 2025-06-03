@@ -36,6 +36,7 @@ class Object(SQLModel, table=True):
     size: float = Field(nullable=False)
     permission: str = Field(nullable=False, sa_column_kwargs={"comment": "공개/비공개/비밀번호"})
     path: str = Field(nullable=False)
+    hashed_pw: str | None = Field(default=None, nullable=True, sa_column_kwargs={"comment": "비밀번호가 필요한 경우 사용"})
     user_id: str = Field(foreign_key="user.id", nullable=False)
     user: User = Relationship(back_populates="objects")
 

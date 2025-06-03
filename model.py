@@ -11,3 +11,10 @@ class SignInUser(PublicUser):
 
 class PrivateUser(PublicUser):
     hash: str
+
+class CreateObject(BaseModel):
+    permission: str
+    password: str
+
+class ObjectPassword(BaseModel):
+    password: str
