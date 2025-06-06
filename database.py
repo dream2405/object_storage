@@ -41,7 +41,7 @@ class Object(SQLModel, table=True):
     user: User = Relationship(back_populates="objects")
 
 if __name__ == "__main__":
-    SQLModel.metadata.drop_all(engine)
+    # SQLModel.metadata.drop_all(engine)
     SQLModel.metadata.create_all(engine)
     print(DATABASE_URL)
     print("Database tables created successfully.")

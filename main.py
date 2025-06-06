@@ -1,5 +1,5 @@
 import uvicorn
-from fastapi import FastAPI, Depends, HTTPException, UploadFile
+from fastapi import FastAPI, Depends, HTTPException, UploadFile, Form, Header
 from datetime import timedelta
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi.staticfiles import StaticFiles
@@ -62,13 +62,15 @@ def create(user: SignInUser) -> PublicUser:
         raise HTTPException(status_code=409, detail=str(exc))
 
     
-@app.post("/upload", description="파일 업로드 (JWT 필요)")
+@app.post("/upload", response_model=PublicObject, description="파일 업로드 (JWT 필요)")
 async def upload_file(
     file: UploadFile, 
-    create_object: CreateObject,
     session: SessionDep, 
+    permission: str = Form(...),
+    password: str = Form(...),
     current_user: PublicUser = Depends(security.get_current_user_from_header)):
     """파일 업로드 엔드포인트"""
+    create_object = CreateObject(permission=permission, password=password)
     if not file.filename:
         raise HTTPException(status_code=400, detail="Filename is required")
     if create_object.permission not in ["public", "private", "password"]:
@@ -92,7 +94,7 @@ async def upload_file(
         session.refresh(file_upload)  # Refresh to get the updated object with ID
         with open(file_upload.path, "wb") as f:
             f.write(await file.read())
-        return file_upload
+        return PublicObject.model_validate(file_upload)
     except Exception as exc:
         session.rollback()
         raise HTTPException(status_code=500, detail=str(exc))
@@ -104,14 +106,15 @@ async def get_files(
     current_user: PublicUser = Depends(security.get_current_user_from_header)):
     """현재 로그인한 유저가 업로드한 파일 목록을 반환"""
     files = session.exec(select(database.Object).where(database.Object.user_id == current_user.name)).all()
-    return files
+    uploaded_files = [PublicObject.model_validate(file) for file in files]
+    return uploaded_files
 
 
-@app.get("/files/{file_id}", description="파일 메타데이터 조회")
+@app.get("/files/{file_id}", response_model=PublicObject, description="파일 메타데이터 조회")
 async def get_file(
     file_id: uuid.UUID,
     session: SessionDep,
-    object_pw: ObjectPassword,
+    x_file_password: str = Header(alias="X-File-Password"),
     current_user: PublicUser = Depends(security.get_current_user_from_header)):
     """파일 ID로 파일 메타데이터 (파일명, 크기, 업로드 시간, 소유자, 접근 권한 등) 조회"""
     file = session.exec(select(database.Object).where(database.Object.id == file_id)).first()
@@ -120,13 +123,13 @@ async def get_file(
     if file.user_id != current_user.name and file.permission != "public":
         raise HTTPException(status_code=403, detail="You do not have permission to access this file")
     if file.permission == "password":
-        if not security.verify_password(object_pw.password, file.hashed_pw): # type: ignore
+        if not security.verify_password(x_file_password, file.hashed_pw): # type: ignore
             raise HTTPException(status_code=403, detail="Invalid password for this file")
     
-    return file
+    return PublicObject.model_validate(file)
 
 
-@app.put("/files/{file_id}/permission", description="파일 접근 권한 변경")
+@app.put("/files/{file_id}/permission", response_model=PublicObject, description="파일 접근 권한 변경")
 async def update_file_permission(
     file_id: uuid.UUID,
     create_object: CreateObject,
@@ -150,7 +153,7 @@ async def update_file_permission(
     session.commit()
     session.refresh(file)
     
-    return file
+    return PublicObject.model_validate(file)
 
 
 @app.delete("/files/{file_id}", description="파일 삭제")
@@ -179,8 +182,8 @@ async def delete_file(
 @app.get("/download/{file_id}", description="파일 다운로드")
 async def download_file(
     file_id: uuid.UUID,
-    object_pw: ObjectPassword,
     session: SessionDep,
+    x_file_password: str = Header(alias="X-File-Password"),
     current_user: PublicUser = Depends(security.get_current_user_from_header)):
     """파일 ID로 파일 다운로드"""
     file = session.exec(select(database.Object).where(database.Object.id == file_id)).first()
@@ -190,7 +193,7 @@ async def download_file(
     if file.user_id != current_user.name and file.permission != "public":
         raise HTTPException(status_code=403, detail="You do not have permission to access this file")
     if file.permission == "password":
-        if not security.verify_password(object_pw.password, file.hashed_pw): # type: ignore
+        if not security.verify_password(x_file_password, file.hashed_pw): # type: ignore
             raise HTTPException(status_code=403, detail="Invalid password for this file")
 
     return {"file_url": SERVER_URL + "/" + file.path}
